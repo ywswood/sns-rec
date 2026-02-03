@@ -65,6 +65,33 @@ SNS投稿案_[ファイル名の日付_連番] から始めてください。
 // ==========================================
 function doPost(e) {
     try {
+        const postData = JSON.parse(e.postData.contents);
+        const action = postData.action;
+
+        // 📥 音声アップロード処理 (action: 'upload_chunk')
+        if (action === 'upload_chunk') {
+            const fileName = postData.fileName;
+            const fileData = postData.fileData; // Base64 string
+
+            if (!fileName || !fileData) {
+                throw new Error('Missing fileName or fileData');
+            }
+
+            const folder = DriveApp.getFolderById(MINUTES_CONFIG.VOICE_FOLDER_ID);
+            const decodedData = Utilities.base64Decode(fileData);
+            const blob = Utilities.newBlob(decodedData, 'audio/webm', fileName);
+
+            const file = folder.createFile(blob);
+            Logger.log(`✅ ファイル保存完了: ${fileName} (${file.getId()})`);
+
+            return ContentService.createTextOutput(JSON.stringify({
+                status: 'success',
+                message: 'Upload successful',
+                fileId: file.getId()
+            })).setMimeType(ContentService.MimeType.JSON);
+        }
+
+        // 📑 投稿案生成リクエスト (action: 'create_report') または その他
         Logger.log("🌐 Webアプリ経由のリクエストを受信しました（非同期モード）");
 
         // 一回限りのトリガーを作成して即座に終了する
@@ -73,7 +100,6 @@ function doPost(e) {
             .after(1) // 1ミリ秒後（実質即時）
             .create();
 
-        // 待たせずにレスポンスを返す
         return ContentService.createTextOutput(JSON.stringify({
             status: 'success',
             message: 'Request accepted. Processing started in background.'
@@ -95,6 +121,8 @@ function doPost(e) {
 function executeAsyncTasks() {
     try {
         Logger.log("🚀 バックグラウンド処理を開始します");
+
+
 
         // 1. 音声ファイルの文字起こし実行 (transcription.jsの関数)
         if (typeof processVoiceFiles === 'function') {

@@ -6,12 +6,8 @@
 // 設定
 // ==========================================
 const CONFIG = {
-  CLIENT_ID: '1063787713722-6tlecpqtmp5i2uubvmcvrgcq5islr4i0.apps.googleusercontent.com',
-  SCOPES: 'https://www.googleapis.com/auth/drive.file',
-  DISCOVERY_DOCS: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-
-  // Google Drive フォルダID
-  VOICE_FOLDER_ID: '1jbVLfqRoYHjy4MlBhGiFcOEy6pNd957O', // voice フォルダ
+  // Google Drive フォルダID (クライアント側では使用せず、GAS側で管理)
+  // VOICE_FOLDER_ID: '1jbVLfqRoYHjy4MlBhGiFcOEy6pNd957O', 
 
   // 録音設定
   CHUNK_DURATION: 5 * 60 * 1000, // 5分（ミリ秒）
@@ -30,7 +26,6 @@ const CONFIG = {
 // ==========================================
 // グローバル変数
 // ==========================================
-let accessToken = null;
 let mediaRecorder = null;
 let audioStream = null;
 let recordingStartTime = null;
@@ -42,9 +37,7 @@ let uploadedChunks = 0;
 let sessionId = null;
 
 // DOM要素
-const authSection = document.getElementById('authSection');
 const mainSection = document.getElementById('mainSection');
-const authButton = document.getElementById('authButton');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const statusText = document.getElementById('statusText');
@@ -58,12 +51,12 @@ const chunkList = document.getElementById('chunkList');
 // ==========================================
 // 初期化
 // ==========================================
-// ==========================================
-// 初期化
-// ==========================================
 window.onload = () => {
   log('アプリ起動');
-  authButton.addEventListener('click', handleAuth);
+
+  // 認証なしで即座にアプリを表示
+  mainSection.classList.remove('hidden');
+
   startBtn.addEventListener('click', () => startRecording(false)); // 新規録音
 
   const continueBtn = document.getElementById('continueBtn');
@@ -105,31 +98,8 @@ function checkPreviousSession() {
 }
 
 // ==========================================
-// 認証処理
+// 認証処理 (廃止)
 // ==========================================
-function handleAuth() {
-  log('Google認証を開始...');
-
-  const client = google.accounts.oauth2.initTokenClient({
-    client_id: CONFIG.CLIENT_ID,
-    scope: CONFIG.SCOPES,
-    callback: (response) => {
-      if (response.error) {
-        log(`❌ 認証エラー: ${response.error}`, 'error');
-        return;
-      }
-
-      accessToken = response.access_token;
-      log('✅ 認証成功');
-
-      // UIを切り替え
-      authSection.classList.add('hidden');
-      mainSection.classList.remove('hidden');
-    },
-  });
-
-  client.requestAccessToken();
-}
 
 // ==========================================
 // 録音開始 (isContinue: 続きからかどうか)
@@ -282,7 +252,7 @@ async function processChunk() {
   addChunkToList(fileName, 'アップロード中...');
 
   try {
-    await uploadToDrive(blob, fileName);
+    await uploadToGAS(blob, fileName);
 
     uploadedChunks++;
     updateChunkInList(fileName, 'uploaded');
@@ -322,7 +292,7 @@ async function handleManualUpload(e) {
 
   try {
     // FileオブジェクトはBlobの一種なのでそのまま渡せる
-    await uploadToDrive(file, file.name);
+    await uploadToGAS(file, file.name);
     log(`✅ 手動アップロード成功: ${file.name}`);
     alert(`アップロード成功: ${file.name}`);
   } catch (error) {
@@ -392,36 +362,38 @@ function downloadChunk(blob, fileName) {
   }, 100);
 }
 // ==========================================
-// Google Drive アップロード（マルチパート）
+// GAS Web App へアップロード (認証不要)
 // ==========================================
-async function uploadToDrive(blob, fileName) {
-  const metadata = {
-    name: fileName,
-    mimeType: CONFIG.MIME_TYPE,
-    parents: [CONFIG.VOICE_FOLDER_ID]
-  };
+async function uploadToGAS(blob, fileName) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(blob);
+    reader.onloadend = async () => {
+      try {
+        const base64Data = reader.result.split(',')[1];
 
-  const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  form.append('file', blob);
+        const response = await fetch(CONFIG.REPORT_API_URL, {
+          method: 'POST',
+          mode: 'no-cors', // クロスオリジン許可（レスポンスは見れないが送信は可能）
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            action: 'upload_chunk',
+            fileName: fileName,
+            fileData: base64Data
+          })
+        });
 
-  const response = await fetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      },
-      body: form
-    }
-  );
+        // no-corsなのでレスポンスの中身は確認できないが、エラーが出なければ成功とみなす
+        resolve({ status: 'sent' });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || 'アップロード失敗');
-  }
-
-  return await response.json();
+      } catch (e) {
+        reject(e);
+      }
+    };
+    reader.onerror = (e) => reject(e);
+  });
 }
 
 // ==========================================
