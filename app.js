@@ -40,9 +40,7 @@ let sessionId = null;
 const mainSection = document.getElementById('mainSection');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
-const statusText = document.getElementById('statusText');
-const chunkCount = document.getElementById('chunkCount');
-const uploadCount = document.getElementById('uploadCount');
+
 const timer = document.getElementById('timer');
 const progressBar = document.getElementById('progressBar');
 const logBox = document.getElementById('logBox');
@@ -184,7 +182,7 @@ async function startRecording(isContinue = false) {
     if (continueBtn) continueBtn.disabled = false;
     startBtn.disabled = false;
 
-    statusText.innerHTML = '<span class="recording-indicator"></span>録音中';
+    // statusText.innerHTML = '<span class="recording-indicator"></span>録音中';
 
     // タイマー開始
     startTimer();
@@ -281,7 +279,7 @@ async function processChunk() {
     uploadedChunks++;
 
     log(`✅ アップロード完了: ${fileName}`);
-    updateUI();
+    // updateUI();
     updateSessionChunk(); // 次回のために保存
 
   } catch (error) {
@@ -436,12 +434,14 @@ function startTimer() {
   }, 100);
 }
 
-// ==========================================
-// UI更新
-// ==========================================
-function updateUI() {
-  chunkCount.textContent = `${currentChunk} / ${CONFIG.MAX_CHUNKS}`;
-  uploadCount.textContent = `${uploadedChunks} 完了`;
+// チャンク確定時に次回番号を更新
+function updateSessionChunk() {
+  const data = {
+    id: sessionId,
+    currentChunk: currentChunk + 1, // 現在の処理が終わったら次は+1
+    updatedAt: Date.now()
+  };
+  localStorage.setItem('sns_rec_session', JSON.stringify(data));
 }
 
 // ==========================================
@@ -478,7 +478,7 @@ function cleanup() {
   const continueBtn = document.getElementById('continueBtn');
   if (continueBtn) continueBtn.style.display = 'inline-block';
 
-  statusText.textContent = '完了';
+  // statusText.textContent = '完了';
 
   log('🛑 録音停止・リソース解放完了');
 }
