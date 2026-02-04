@@ -211,6 +211,10 @@ async function startRecording(isContinue = false) {
 // 録音停止
 // ==========================================
 function stopRecording() {
+  // ⚡️ 即座にボタンを無効化してダブルクリック防止＆「処理中」を示す
+  stopBtn.disabled = true;
+  stopBtn.textContent = '⏳ 処理中...';
+
   log('録音を停止します...');
 
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
@@ -473,6 +477,10 @@ function cleanup() {
   // UI復元
   startBtn.classList.remove('hidden');
   stopBtn.classList.add('hidden');
+
+  // Stopボタンをリセット（次回用）
+  stopBtn.disabled = false;
+  stopBtn.textContent = '録音停止';
 
   // 続きボタンを表示
   const continueBtn = document.getElementById('continueBtn');
