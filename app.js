@@ -46,7 +46,7 @@ const uploadCount = document.getElementById('uploadCount');
 const timer = document.getElementById('timer');
 const progressBar = document.getElementById('progressBar');
 const logBox = document.getElementById('logBox');
-const chunkList = document.getElementById('chunkList');
+
 
 // ==========================================
 // 初期化
@@ -106,6 +106,17 @@ function checkPreviousSession() {
 // ==========================================
 async function startRecording(isContinue = false) {
   try {
+    // ⚡️ 即座にボタンを無効化してダブルクリック防止＆「反応中」を示す
+    const btn = isContinue ? document.getElementById('continueBtn') : startBtn;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ 準備中...';
+
+    // 続きからボタンも無効化（誤操作防止）
+    const continueBtn = document.getElementById('continueBtn');
+    if (continueBtn) continueBtn.disabled = true;
+    startBtn.disabled = true;
+
     log(isContinue ? '録音を再開します...' : '録音を開始します...');
 
     // マイク権限を取得
@@ -163,11 +174,17 @@ async function startRecording(isContinue = false) {
 
     mediaRecorder.start();
 
-    // UIを更新
+    // UIを更新 (ここでStopボタンに切り替え)
     startBtn.classList.add('hidden');
     stopBtn.classList.remove('hidden');
+
+    // ボタンの状態をリセット（次に表示されるときのために）
+    btn.disabled = false;
+    btn.textContent = originalText;
+    if (continueBtn) continueBtn.disabled = false;
+    startBtn.disabled = false;
+
     statusText.innerHTML = '<span class="recording-indicator"></span>録音中';
-    chunkList.style.display = 'block';
 
     // タイマー開始
     startTimer();
@@ -179,6 +196,16 @@ async function startRecording(isContinue = false) {
 
   } catch (error) {
     log(`❌ 録音開始エラー: ${error.message}`, 'error');
+    alert('マイクの起動に失敗しました: ' + error.message);
+
+    // エラー時の復帰
+    startBtn.disabled = false;
+    startBtn.textContent = '録音開始';
+    const continueBtn = document.getElementById('continueBtn');
+    if (continueBtn) {
+      continueBtn.disabled = false;
+      continueBtn.textContent = '⏯️ 続きから録音';
+    }
   }
 }
 
@@ -248,14 +275,10 @@ async function processChunk() {
 
   log(`📤 アップロード中: ${fileName} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
 
-  // チャンクリストに追加
-  addChunkToList(fileName, 'アップロード中...');
-
   try {
     await uploadToGAS(blob, fileName);
 
     uploadedChunks++;
-    updateChunkInList(fileName, 'uploaded');
 
     log(`✅ アップロード完了: ${fileName}`);
     updateUI();
@@ -263,7 +286,6 @@ async function processChunk() {
 
   } catch (error) {
     log(`❌ アップロード失敗: ${error.message}`, 'error');
-    updateChunkInList(fileName, '失敗');
 
     // 自動ダウンロード（救済措置）
     log(`💾 自動保存を実行します: ${fileName}`);
@@ -420,29 +442,6 @@ function startTimer() {
 function updateUI() {
   chunkCount.textContent = `${currentChunk} / ${CONFIG.MAX_CHUNKS}`;
   uploadCount.textContent = `${uploadedChunks} 完了`;
-}
-
-// ==========================================
-// チャンクリスト管理
-// ==========================================
-function addChunkToList(fileName, status) {
-  const item = document.createElement('div');
-  item.className = 'chunk-item';
-  item.id = `chunk-${fileName}`;
-  item.innerHTML = `
-    <span>${fileName}</span>
-    <span class="chunk-status">${status}</span>
-  `;
-  chunkList.appendChild(item);
-}
-
-function updateChunkInList(fileName, status) {
-  const item = document.getElementById(`chunk-${fileName}`);
-  if (item) {
-    const statusSpan = item.querySelector('.chunk-status');
-    statusSpan.className = `chunk-status ${status}`;
-    statusSpan.textContent = status === 'uploaded' ? '完了' : status;
-  }
 }
 
 // ==========================================
