@@ -28,34 +28,27 @@
 
     body {
       font-family: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      /* Warm Sunset Gradient for SNS vibe */
-      background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%);
-      background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
-      background: linear-gradient(to right, #f83600 0%, #f9d423 100%);
-      /* Let's pick a nice modern one: Orange -> Pinkish Red */
-      background: linear-gradient(135deg, #FF8008 0%, #FFC837 100%);
-      /* Actually, let's go with a sleek "SNS" look: Deep Blue/Purple is taken. Let's do a vibrant Orange/Red or Teal. */
-      /* Decision: "Mango Pulp" - vibrant and distinct from Purple */
-      background: linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%);
-
+      /* Elegant Pink Gradient */
+      background: linear-gradient(135deg, #C06C84 0%, #FADADD 100%);
       min-height: 100vh;
       display: flex;
       justify-content: center;
       align-items: center;
       padding: 20px;
-      color: #fff;
+      color: #333;
+      /* Default text dark */
     }
 
     .container {
-      background: rgba(0, 0, 0, 0.25);
-      /* Darker overlay for contrast on bright bg */
-      backdrop-filter: blur(12px);
+      background: #FFF5F5;
+      /* Lavender Blush */
       border-radius: 30px;
       padding: 40px 30px;
       max-width: 500px;
       width: 100%;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 10px 40px rgba(192, 108, 132, 0.3);
+      /* Colored shadow */
+      border: 1px solid rgba(255, 255, 255, 0.5);
     }
 
     h1 {
@@ -64,22 +57,25 @@
       margin-bottom: 10px;
       font-weight: 700;
       letter-spacing: 0.05em;
+      color: #C06C84;
+      /* Old Rose */
     }
 
     .subtitle {
       text-align: center;
       font-size: 14px;
-      opacity: 0.95;
+      opacity: 0.8;
       margin-bottom: 30px;
       font-weight: 400;
+      color: #C06C84;
     }
 
     .status-card {
-      background: rgba(0, 0, 0, 0.2);
+      background: rgba(255, 255, 255, 0.6);
       border-radius: 20px;
       padding: 25px;
       margin-bottom: 25px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(192, 108, 132, 0.1);
     }
 
     .status-row {
@@ -95,12 +91,13 @@
 
     .status-label {
       font-size: 14px;
-      opacity: 0.9;
+      color: #888;
     }
 
     .status-value {
       font-size: 20px;
       font-weight: 700;
+      color: #C06C84;
     }
 
     .timer {
@@ -109,13 +106,14 @@
       text-align: center;
       margin: 20px 0;
       font-variant-numeric: tabular-nums;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      text-shadow: none;
+      color: #C06C84;
     }
 
     .progress-bar {
       width: 100%;
       height: 10px;
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba(192, 108, 132, 0.1);
       border-radius: 10px;
       overflow: hidden;
       margin-top: 15px;
@@ -123,11 +121,10 @@
 
     .progress-fill {
       height: 100%;
-      background: #fff;
-      /* White looks clean on vibrant bg */
+      background: #C06C84;
       transition: width 0.3s ease;
       border-radius: 10px;
-      box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+      box-shadow: none;
     }
 
     .btn {
@@ -140,21 +137,21 @@
       cursor: pointer;
       transition: all 0.2s ease;
       margin-bottom: 15px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 4px 15px rgba(192, 108, 132, 0.2);
     }
 
     .btn-primary {
-      background: #fff;
-      color: #FF416C;
+      background: #C06C84;
+      color: #FFF5F5;
     }
 
     .btn-primary:active {
       transform: scale(0.98);
-      background: #f0f0f0;
+      background: #a05a6e;
     }
 
     .btn-danger {
-      background: linear-gradient(135deg, #333, #000);
+      background: #444;
       color: #fff;
       border: 1px solid rgba(255, 255, 255, 0.2);
     }
