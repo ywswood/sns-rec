@@ -12,13 +12,13 @@ const transcribeProps = PropertiesService.getScriptProperties().getProperties();
 const CONFIG = {
   BANK_URL: transcribeProps.BANK_URL,
   BANK_PASS: transcribeProps.BANK_PASS,
-  PROJECT_NAME: transcribeProps.PROJECT_NAME,
+  PROJECT_NAME: transcribeProps.PROJECT_NAME || 'sns-rec',
   TXT_FOLDER_ID: transcribeProps.TXT_FOLDER_ID,
   ARCH_FOLDER_ID: transcribeProps.ARCH_FOLDER_ID,
   VOICE_FOLDER_ID: transcribeProps.VOICE_FOLDER_ID,
-  MAX_RETRIES: parseInt(transcribeProps.MAX_RETRIES || '3', 10),
-  RETRY_DELAY: parseInt(transcribeProps.RETRY_DELAY || '2000', 10),
-  API_TIMEOUT: parseInt(transcribeProps.API_TIMEOUT || '300', 10)
+  MAX_RETRIES: 3,
+  RETRY_DELAY: 2000,
+  API_TIMEOUT: 60000
 };
 
 // ==========================================
@@ -81,8 +81,8 @@ function callApiBankTranscription(blob, mimeType) {
 
   for (let attempt = 1; attempt <= CONFIG.MAX_RETRIES; attempt++) {
     try {
-      // APIキー取得
-      let bankUrl = `${CONFIG.BANK_URL}?pass=${CONFIG.BANK_PASS}&project=${CONFIG.PROJECT_NAME}&type=stt`;
+      // 1. APIキー取得
+      let bankUrl = `${CONFIG.BANK_URL}?pass=${CONFIG.BANK_PASS}&project=${CONFIG.PROJECT_NAME}`;
       if (previousModel) {
         bankUrl += `&error_503=true&previous_model=${encodeURIComponent(previousModel)}`;
       }
@@ -90,14 +90,22 @@ function callApiBankTranscription(blob, mimeType) {
       const bankRes = UrlFetchApp.fetch(bankUrl, { muteHttpExceptions: true });
       const bankData = JSON.parse(bankRes.getContentText());
 
+      // 429 レート制限対応
+      if (bankData.status === 'rate_limited') {
+        const waitMs = bankData.wait_ms || CONFIG.RETRY_DELAY;
+        Logger.log(`⏳ レート制限: ${waitMs}ms 待機します`);
+        Utilities.sleep(waitMs);
+        attempt--;
+        continue;
+      }
+
       if (bankData.status !== 'success') {
-        reportError('INITIAL_FETCH_FAILED');
-        throw new Error(bankData.message);
+        throw new Error(`API Bank Error: ${bankData.message}`);
       }
 
       const { api_key, model_name } = bankData;
 
-      // Gemini呼び出し
+      // 2. Gemini呼び出し (MIMEタイプ固定)
       const base64Audio = Utilities.base64Encode(blob.getBytes());
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model_name}:generateContent?key=${api_key}`;
 
@@ -105,7 +113,7 @@ function callApiBankTranscription(blob, mimeType) {
         contents: [{
           parts: [
             { text: "音声を書き起こしてください。フィラー（えー、あー）は取り除いてください。" },
-            { inline_data: { mime_type: mimeType, data: base64Audio } }
+            { inline_data: { mime_type: 'audio/webm', data: base64Audio } }
           ]
         }]
       };
@@ -114,13 +122,14 @@ function callApiBankTranscription(blob, mimeType) {
         method: 'post',
         contentType: 'application/json',
         payload: JSON.stringify(payload),
-        muteHttpExceptions: true,
-        timeout: CONFIG.API_TIMEOUT
+        muteHttpExceptions: true
       });
 
       const statusCode = geminiRes.getResponseCode();
 
+      // 503エラー対応 (報告不要)
       if (statusCode === 503) {
+        Logger.log(`⚠️ 503 Error: ${model_name} - 他のモデルで再試行します`);
         previousModel = model_name;
         Utilities.sleep(CONFIG.RETRY_DELAY);
         continue;
@@ -135,7 +144,7 @@ function callApiBankTranscription(blob, mimeType) {
       return geminiData.candidates[0].content.parts[0].text;
 
     } catch (error) {
-      Logger.log(`❌ リトライ待機: ${error.message}`);
+      Logger.log(`❌ 試行 ${attempt}/${CONFIG.MAX_RETRIES}: ${error.message}`);
       if (attempt === CONFIG.MAX_RETRIES) throw error;
       Utilities.sleep(CONFIG.RETRY_DELAY);
     }
@@ -147,48 +156,12 @@ function callApiBankTranscription(blob, mimeType) {
 // ==========================================
 function saveTextToSessionFile(originalFileName, text) {
   const txtFolder = DriveApp.getFolderById(CONFIG.TXT_FOLDER_ID);
-  const archFolder = DriveApp.getFolderById(CONFIG.ARCH_FOLDER_ID); // 設定から取得
 
   // 1. SessionIDの特定（アプリ側のID: YYMMDD_HHmmss）
   // ファイル名: 260202_130000_chunk01.webm -> 260202_130000
   const sessionMatch = originalFileName.match(/^(\d{6}_\d{6})_chunk\d{2}\.webm$/);
   const rawSessionId = sessionMatch ? sessionMatch[1] : originalFileName.replace('.webm', '');
-
-  // 2. 連番ネーミングの決定 (ScriptPropertiesでマッピング管理)
-  const props = PropertiesService.getScriptProperties();
-  let targetFileName = props.getProperty(rawSessionId); // 既にあれば取得 (例: 260202_01.txt)
-
-  // まだマッピングが無い場合（新規セッション）
-  if (!targetFileName) {
-    const todayPrefix = rawSessionId.substring(0, 6); // YYMMDD
-
-    // 既存ファイルの連番最大値を検索 (TXTフォルダとARCHフォルダ両方)
-    let maxNum = 0;
-
-    const checkFolder = (folder) => {
-      const files = folder.getFiles();
-      while (files.hasNext()) {
-        const f = files.next();
-        // マッチ: YYMMDD_XX.txt
-        const m = f.getName().match(new RegExp(`^${todayPrefix}_(\\d{2})\\.txt$`));
-        if (m) {
-          const num = parseInt(m[1], 10);
-          if (num > maxNum) maxNum = num;
-        }
-      }
-    };
-
-    checkFolder(txtFolder);
-    checkFolder(archFolder);
-
-    // 新しい連番
-    const nextNum = String(maxNum + 1).padStart(2, '0');
-    targetFileName = `${todayPrefix}_${nextNum}.txt`;
-
-    // マッピング保存 (このセッションIDはずっとこのファイル名を使う)
-    props.setProperty(rawSessionId, targetFileName);
-    Logger.log(`🆕 新規連番割り当て: ${rawSessionId} -> ${targetFileName}`);
-  }
+  const targetFileName = `${rawSessionId}.txt`;
 
   // チャンク番号取得
   const chunkMatch = originalFileName.match(/_chunk(\d{2})\.webm$/);
@@ -196,8 +169,7 @@ function saveTextToSessionFile(originalFileName, text) {
 
   const appendContent = `\n\n--- Chunk ${chunkNum} (${new Date().toLocaleTimeString()}) ---\n${text}`;
 
-  // 3. ファイルへの書き込み
-  // ターゲットファイルを探す
+  // 2. ファイルへの書き込み
   const existingFiles = txtFolder.getFilesByName(targetFileName);
 
   if (existingFiles.hasNext()) {
@@ -208,7 +180,7 @@ function saveTextToSessionFile(originalFileName, text) {
     Logger.log(`📝 既存ファイルに追記: ${targetFileName}`);
   } else {
     // 新規作成
-    const header = `=== 商談記録 ===\nOriginal Session: ${rawSessionId}\nFile Name: ${targetFileName}\n作成開始: ${new Date().toLocaleString()}\n`;
+    const header = `=== 録音記録 ===\nOriginal Session: ${rawSessionId}\nFile Name: ${targetFileName}\n作成開始: ${new Date().toLocaleString()}\n`;
     txtFolder.createFile(targetFileName, header + appendContent, MimeType.PLAIN_TEXT);
     Logger.log(`🆕 新規セッションファイル作成: ${targetFileName}`);
   }

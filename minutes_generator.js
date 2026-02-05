@@ -14,16 +14,16 @@ const minutesProps = PropertiesService.getScriptProperties().getProperties();
 const MINUTES_CONFIG = {
     BANK_URL: minutesProps.BANK_URL,
     BANK_PASS: minutesProps.BANK_PASS,
-    PROJECT_NAME: minutesProps.PROJECT_NAME,
+    PROJECT_NAME: minutesProps.PROJECT_NAME || 'sns-rec',
     TXT_FOLDER_ID: minutesProps.TXT_FOLDER_ID,
     DOC_FOLDER_ID: minutesProps.DOC_FOLDER_ID,
     ARCH_FOLDER_ID: minutesProps.ARCH_FOLDER_ID,
     VOICE_FOLDER_ID: minutesProps.VOICE_FOLDER_ID,
     NOTIFICATION_EMAIL: minutesProps.NOTIFICATION_EMAIL,
     SAMPLE_IMAGE_NAME: minutesProps.SAMPLE_IMAGE_NAME || 'sample_product.png',
-    MAX_RETRIES: parseInt(minutesProps.MAX_RETRIES || '3', 10),
-    RETRY_DELAY: parseInt(minutesProps.RETRY_DELAY || '2000', 10),
-    API_TIMEOUT: parseInt(minutesProps.API_TIMEOUT || '300', 10)
+    MAX_RETRIES: 3,
+    RETRY_DELAY: 2000,
+    API_TIMEOUT: 60000
 };
 
 // ==========================================
@@ -171,8 +171,8 @@ function processDocuments(force = false) {
             const file = files.next();
             const fileName = file.getName(); // 例: 260201_150000.txt
 
-            // 連番ファイル(_01) または タイムスタンプ(_162256) の両方を許可
-            if (!fileName.match(/^\d{6}_(\d{2}|\d{6})\.txt$/)) continue;
+            // ファイル名形式チェック: YYMMDD_HHmmss.txt または YYMMDD_XX.txt
+            if (!fileName.match(/^\d{6}_\d{2,6}\.txt$/)) continue;
 
             // 強制実行でない場合のみ、待機判定を行う
             if (!force) {
@@ -336,6 +336,7 @@ function callGeminiForMinutes(text, systemPrompt) {
 
     for (let attempt = 1; attempt <= MINUTES_CONFIG.MAX_RETRIES; attempt++) {
         try {
+            // 1. APIキー取得
             let bankUrl = `${MINUTES_CONFIG.BANK_URL}?pass=${MINUTES_CONFIG.BANK_PASS}&project=${MINUTES_CONFIG.PROJECT_NAME}`;
             if (previousModel) {
                 bankUrl += `&error_503=true&previous_model=${encodeURIComponent(previousModel)}`;
@@ -344,13 +345,23 @@ function callGeminiForMinutes(text, systemPrompt) {
             const bankRes = UrlFetchApp.fetch(bankUrl, { muteHttpExceptions: true });
             const bankData = JSON.parse(bankRes.getContentText());
 
+            // 429 レート制限対応
+            if (bankData.status === 'rate_limited') {
+                const waitMs = bankData.wait_ms || MINUTES_CONFIG.RETRY_DELAY;
+                Logger.log(`⏳ レート制限: ${waitMs}ms 待機します`);
+                Utilities.sleep(waitMs);
+                attempt--;
+                continue;
+            }
+
             if (bankData.status !== 'success') {
-                throw new Error(bankData.message);
+                throw new Error(`API Bank Error: ${bankData.message}`);
             }
 
             const { api_key, model_name } = bankData;
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model_name}:generateContent?key=${api_key}`;
 
+            // 2. Gemini呼び出し
             const payload = {
                 contents: [{
                     parts: [{ text: systemPrompt + "\n\n【書き起こしテキスト】\n" + text }]
@@ -361,32 +372,48 @@ function callGeminiForMinutes(text, systemPrompt) {
                 method: 'post',
                 contentType: 'application/json',
                 payload: JSON.stringify(payload),
-                muteHttpExceptions: true,
-                timeout: MINUTES_CONFIG.API_TIMEOUT
+                muteHttpExceptions: true
             });
 
             const statusCode = geminiRes.getResponseCode();
 
+            // 503エラー対応 (報告不要)
             if (statusCode === 503) {
+                Logger.log(`⚠️ 503 Error: ${model_name} - 他のモデルで再試行します`);
                 previousModel = model_name;
                 Utilities.sleep(MINUTES_CONFIG.RETRY_DELAY);
                 continue;
             }
 
             const geminiData = JSON.parse(geminiRes.getContentText());
-
             if (geminiData.error) {
+                // 503以外のエラーは報告
+                reportErrorForMinutes(api_key);
                 throw new Error(JSON.stringify(geminiData.error));
             }
 
             return geminiData.candidates[0].content.parts[0].text;
 
         } catch (error) {
-            Logger.log(`❌ Gemini呼び出しエラー(試行${attempt}): ${error.message}`);
+            Logger.log(`❌ 試行 ${attempt}/${MINUTES_CONFIG.MAX_RETRIES}: ${error.message}`);
             if (attempt === MINUTES_CONFIG.MAX_RETRIES) return null;
             Utilities.sleep(MINUTES_CONFIG.RETRY_DELAY);
         }
     }
     return null;
+}
+
+/**
+ * API Bankへのエラー報告
+ */
+function reportErrorForMinutes(api_key) {
+    try {
+        UrlFetchApp.fetch(MINUTES_CONFIG.BANK_URL, {
+            method: 'post',
+            contentType: 'application/json',
+            payload: JSON.stringify({ pass: MINUTES_CONFIG.BANK_PASS, api_key: api_key }),
+            muteHttpExceptions: true
+        });
+    } catch (e) { }
 }
 
