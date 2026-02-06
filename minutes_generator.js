@@ -61,86 +61,60 @@ SNS投稿案_[ファイル名の日付_連番] から始めてください。
 // メイン処理（トリガー実行）
 // ==========================================
 // ==========================================
-// Webアプリケーション (doPost) - 外部からの実行用
+// Webアプリケーション (doPost) - 非同期化対応
 // ==========================================
 function doPost(e) {
     try {
         const postData = JSON.parse(e.postData.contents);
         const action = postData.action;
 
-        // 📥 音声アップロード処理 (action: 'upload_chunk')
+        // 📥 音声アップロード（これは軽量なので同期でOK）
         if (action === 'upload_chunk') {
-            const fileName = postData.fileName;
-            const fileData = postData.fileData; // Base64 string
-
-            if (!fileName || !fileData) {
-                throw new Error('Missing fileName or fileData');
-            }
-
             const folder = DriveApp.getFolderById(MINUTES_CONFIG.VOICE_FOLDER_ID);
-            const decodedData = Utilities.base64Decode(fileData);
-            const blob = Utilities.newBlob(decodedData, 'audio/webm', fileName);
+            const decodedData = Utilities.base64Decode(postData.fileData);
+            const blob = Utilities.newBlob(decodedData, 'audio/webm', postData.fileName);
+            folder.createFile(blob);
+            return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+        }
 
-            const file = folder.createFile(blob);
-            Logger.log(`✅ ファイル保存完了: ${fileName} (${file.getId()})`);
+        // 📑 書類生成（重いのでトリガーで分離）
+        if (action === 'create_report') {
+            // 1秒後に実行するトリガーを作成（非同期実行の開始）
+            ScriptApp.newTrigger('executeAsyncTasks')
+                .timeBased()
+                .after(1000)
+                .create();
 
+            // 待たせずに即座にレスポンスを返す
             return ContentService.createTextOutput(JSON.stringify({
                 status: 'success',
-                message: 'Upload successful',
-                fileId: file.getId()
+                message: 'Processing started in background.'
             })).setMimeType(ContentService.MimeType.JSON);
         }
 
-        // 📑 投稿案生成リクエスト (action: 'create_report') または その他
-        Logger.log("🌐 Webアプリ経由のリクエストを受信しました（非同期モード）");
-
-        // 一回限りのトリガーを作成して即座に終了する
-        ScriptApp.newTrigger('executeAsyncTasks')
-            .timeBased()
-            .after(1) // 1ミリ秒後（実質即時）
-            .create();
-
-        return ContentService.createTextOutput(JSON.stringify({
-            status: 'success',
-            message: 'Request accepted. Processing started in background.'
-        })).setMimeType(ContentService.MimeType.JSON);
-
+        return ContentService.createTextOutput(JSON.stringify({ status: 'error' })).setMimeType(ContentService.MimeType.JSON);
     } catch (error) {
-        Logger.log(`❌ Webアプリ受付エラー: ${error.toString()}`);
-        return ContentService.createTextOutput(JSON.stringify({
-            status: 'error',
-            message: error.toString()
-        })).setMimeType(ContentService.MimeType.JSON);
+        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() })).setMimeType(ContentService.MimeType.JSON);
     }
 }
 
 /**
- * 非同期実行用のラッパー関数
- * doPostからトリガー経由で呼び出される
+ * バックグラウンドで実行される実処理
  */
 function executeAsyncTasks() {
+    // まず自分を呼び出したトリガーを掃除（ゾンビ化防止）
+    const triggers = ScriptApp.getProjectTriggers();
+    triggers.forEach(t => {
+        if (t.getHandlerFunction() === 'executeAsyncTasks') ScriptApp.deleteTrigger(t);
+    });
+
     try {
-        Logger.log("🚀 バックグラウンド処理を開始します");
-
-
-
-        // 1. 音声ファイルの文字起こし実行 (transcription.jsの関数)
-        if (typeof processVoiceFiles === 'function') {
-            Logger.log("▶ processVoiceFiles() を実行します");
-            processVoiceFiles();
-        } else {
-            Logger.log("⚠️ processVoiceFiles が見つかりません");
-        }
-
-        // 2. 書類生成の強制実行
-        Logger.log("▶ processDocuments(true) を実行します");
+        Logger.log("🚀 非同期タスクを開始しました");
+        if (typeof processVoiceFiles === 'function') processVoiceFiles();
         processDocuments(true);
-
-        Logger.log("✅ バックグラウンド処理が完了しました");
-
-    } catch (error) {
-        Logger.log(`❌ バックグラウンド実行エラー: ${error.toString()}`);
-        Logger.log(error.stack);
+        Logger.log("✅ 全行程が完了しました");
+    } catch (e) {
+        Logger.log(`❌ バックグラウンド実行エラー: ${e.toString()}`);
     }
 }
 

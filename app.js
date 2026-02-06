@@ -138,10 +138,11 @@ async function startRecording(isContinue = false) {
       // 続きから: localStorageから復元
       const savedData = JSON.parse(localStorage.getItem('sns_rec_session'));
       sessionId = savedData.id;
-      currentChunk = savedData.currentChunk; // 次のチャンク番号
-      uploadedChunks = 0; // 表示用カウンタはリセットしても良いが、続き番号は重要
+      // scheduleNextChunkのonstopでインクリメントされるため、-1から開始して整合性を取る
+      currentChunk = savedData.currentChunk - 1;
+      uploadedChunks = 0;
 
-      log(`📝 セッション再開: ${sessionId} (Start from Chunk ${currentChunk})`);
+      log(`📝 セッション再開: ${sessionId} (Start from Chunk ${String(savedData.currentChunk).padStart(2, '0')})`);
     } else {
       // 新規: セッションIDを生成（YYMMDDHHmmss形式）
       const now = new Date();
