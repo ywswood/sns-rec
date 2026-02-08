@@ -1,0 +1,33 @@
+# 環境変数・秘密情報
+.env
+.env.local
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+.npm
+.yarn
+
+# IDE・エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ビルド生成物
+dist/
+build/
+out/
+
+# ログファイル
+*.log
+
+# クッキー・キャッシュ
+.cache/
+.tmp/
