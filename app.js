@@ -18,9 +18,9 @@ const CONFIG = {
   MIME_TYPE: 'audio/webm;codecs=opus',
   FILE_EXTENSION: '.webm',
 
-  // 報告書作成API (GAS Web App URL)
-  // ※デプロイ後にURLをここに貼り付けてください
-  REPORT_API_URL: 'https://script.google.com/macros/s/AKfycbwotAxtlbg4ZmicgjfivUJP3sbPvvi8fPFGsPMt9G7RuNuEJwH-AJYBP5cIIT8uim0Big/exec'
+  // 報告書作成API (GAS Web App URL - 環境変数から読み込む)
+  // ※.env.example を参照して .env に値を設定してください
+  REPORT_API_URL: process.env.GAS_API_URL || 'https://script.google.com/macros/s/YOUR_GAS_SCRIPT_ID/exec'
 };
 
 // ==========================================
